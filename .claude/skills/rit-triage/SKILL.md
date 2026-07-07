@@ -2,7 +2,7 @@
 name: rit-triage
 description: Triage bugs from a PIXAA dashboard panel — assess, prioritize, assign to RIT team, and record
 argument-hint: "<panel-name> — e.g. 'With Customer Cases', 'Component Regressions', 'Untriaged'"
-allowed-tools: Read, Edit, Write, mcp__jira__jira_search, mcp__jira__jira_get_issue, mcp__jira__jira_update_issue, mcp__jira__jira_transition_issue, mcp__jira__jira_add_comment, mcp__jira__jira_get_transitions, mcp__jira__jira_get_issues_development_info
+allowed-tools: Read, Edit, Write, mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql, mcp__plugin_jira_atlassian__getJiraIssue, mcp__plugin_jira_atlassian__editJiraIssue, mcp__plugin_jira_atlassian__transitionJiraIssue, mcp__plugin_jira_atlassian__addCommentToJiraIssue, mcp__plugin_jira_atlassian__getTransitionsForJiraIssue
 ---
 
 # RIT Triage
@@ -22,76 +22,105 @@ Triage bugs from a PIXAA Bugs Dashboard panel. Fetches all bugs, loops through e
 /rit-triage All Open
 ```
 
-The panel name must match one from the "PIXAA Bugs Dashboard JQL Queries" table in `rit_manual.md`.
+The panel name is matched fuzzily against the "PIXAA Bugs Dashboard JQL Queries" table in `rit_manual.md` — partial matches and missing leading words (e.g. "Customer Cases" → "With Customer Cases", "Release Blocker" → "Release Blockers") are accepted.
 
 ## Instructions
 
 ### Step 1: Load configuration
 
-Read `/Users/jhadvig/Workspace/OpenShift/RIT/rit_manual.md` and extract:
+Read `rit_manual.md` from the **current working directory** (not a hardcoded path) and extract:
 
-1. **JQL query** — Find the "PIXAA Bugs Dashboard JQL Queries" section. Locate the table row matching the `<panel-name>` argument. Construct the full JQL:
-   - Base filter: `filter in (operator-framework-all-bugs, "PIXAA HIVE bugs", "PIXAA CCO bugs", "PIXAA OCPCLOUD bugs", "PIXAA Console bugs", "PIXAA MCP Server Bugs", "PIXAA Serverless Bugs", "All OTA Bugs")`
+1. **JQL query** — Find the "PIXAA Bugs Dashboard JQL Queries" section. Locate the table row whose panel name fuzzy-matches the `<panel-name>` argument (case-insensitive, partial match, ignore leading "With"). Construct the full JQL:
+   - Base filter: `filter in ("operator-framework-all-bugs", "PIXAA HIVE bugs", "PIXAA CCO bugs", "PIXAA OCPCLOUD bugs", "PIXAA Console bugs", "PIXAA MCP Server Bugs", "PIXAA Serverless Bugs", "All OTA Bugs")`
    - Plus the panel's extra conditions from the table
    - Plus common triage condition: `(labels is EMPTY or labels not in (triaged) or assignee is EMPTY or priority is EMPTY) and (labels not in (ocp-sustaining) or labels is EMPTY)`
    - Plus `statusCategory != done`
    - Plus the panel's sort order
 
-   If the panel name doesn't match any row, tell the user and list valid panel names.
+   If no row matches even fuzzily, tell the user and list valid panel names.
 
-2. **RIT team roster** — Find the "Current RIT Rotation" section. Parse the Engineering table to get: name, email, Jira Account ID, area of expertise, notes (e.g. PTO). Skip engineers marked as PTO.
+   Also note whether the panel JQL already filters by Release Blocker status (e.g. `"Release Blocker" in (Approved, Proposed)`). If it does, set a flag `panel_is_release_blockers = true` — this suppresses Action 3 (release blocker assessment) since the field is already set.
 
-3. **Comment templates** — Find the "Comment templates for status transitions" section. Load the templates for ASSIGNED->New (reassign), ASSIGNED->New (keep), and priority setting.
+2. **RIT team roster** — Find the "Current RIT Rotation" section. Parse the Engineering table to get: name, email, Jira Account ID, area of expertise, notes (e.g. PTO). Include **all** engineers in the table regardless of their role label (RIT Member, Triage Monitor, QA Monitor, Monitor, etc.). Skip only engineers explicitly marked as PTO.
 
-4. **Tracker file** — Look for an existing `triaged_bugs_YYYY-MM-DD.md` file in `/Users/jhadvig/Workspace/OpenShift/RIT/` where the date matches the current RIT rotation week start date from the "Current RIT Rotation" heading. If it exists, read the current assignment distribution to know each engineer's current bug count. If it doesn't exist, create it with the standard header and empty tables.
+3. **Comment templates** — Find the "Comment templates for status transitions" section. Load the templates for ASSIGNED→New (reassign), ASSIGNED→New (keep), and priority setting.
+
+4. **Tracker file** — Look for an existing `triaged_bugs_YYYY-MM-DD.md` file in the **current working directory** where the date matches the current RIT rotation week start date from the "Current RIT Rotation" heading. If it exists, read the current assignment distribution to know each engineer's current bug count and already-assigned keys. If it doesn't exist, create it with the standard header and empty tables (see Tracker Format below).
 
 ### Step 2: Fetch all bugs
 
-1. Run `mcp__jira__jira_search` with the constructed JQL. Request fields: `summary,status,assignee,priority,labels,components,created,updated`. Set limit to 50.
+1. Run the Jira search MCP tool with the constructed JQL. Request fields: `summary, status, assignee, priority, labels, components, created, updated`. Set limit to 50.
 
-2. If there are more results (next_page_token), paginate to get all bugs.
+2. If there are more results (next page token), paginate until all bugs are fetched.
 
-3. Batch-fetch development info for all bug keys using `mcp__jira__jira_get_issues_development_info` with `data_type=pullrequest` to check for linked PRs. Do this in batches of 16 keys.
+3. Build an in-memory list of all bugs with their full context: key, summary, status, priority, assignee, labels, components.
 
-4. Build an in-memory list of all bugs with their full context: summary, status, priority, assignee, labels, components, has_linked_PRs (boolean).
+4. **Fast-path identification** — Classify each bug:
+   - `needs_only_label`: has assignee ✓, has priority ✓, missing `triaged` label only → will be auto-applied, no confirmation needed
+   - `needs_triage`: missing one or more of priority, assignee, or needs status transition
+   - `post_missing_fields`: status is POST/ON_QA/Modified AND (missing priority OR missing `triaged` label) → apply missing fields only, skip status/assignment changes
+   - `post_clean`: status is POST/ON_QA/Modified AND all fields set → fully skip
 
 ### Step 3: Present summary to user
 
 Show:
 - Total bug count
 - Grouped by status: how many in New, ASSIGNED, POST, ON_QA, other
-- How many need: priority (Undefined), assignee (Unassigned), `triaged` label, status transition (ASSIGNED with no PRs)
-- Current RIT team load from tracker file
+- How many need: priority (Undefined), assignee (Unassigned), `triaged` label only, status transition (ASSIGNED)
+- How many POST/ON_QA bugs still have missing fields (will be partially acted on)
+- Current RIT team load from tracker (engineer → bug count)
+
+If the panel has more than 10 bugs, offer a processing shortcut:
+> "This panel has N bugs. Process all at once, or start with a subset (e.g. Critical only)?"
 
 Ask user: "Proceed with triage? (yes/no)"
 
 If the user says no, stop.
 
-### Step 4: Loop through each bug
+### Step 4: Process bugs
 
-Process bugs in priority order (Critical first, then Major, Normal, Minor, Undefined). For each bug:
+#### 4a. Auto-apply `triaged` label to `needs_only_label` bugs
 
-#### Action 1: Assess status
-- If status is POST, ON_QA, or Modified → **skip** this bug (it's progressing through the lifecycle)
+For all bugs classified as `needs_only_label`: apply the `triaged` label immediately in parallel (batch Jira calls where possible). No user confirmation needed. Record each in the tracker.
+
+#### 4b. Apply missing fields to `post_missing_fields` bugs
+
+For bugs in POST/ON_QA/Modified status that are still missing fields:
+- If priority is Undefined: assess and propose priority (see Action 4 below). Wait for confirmation, then set it and add the priority comment.
+- If `triaged` label is missing: add it automatically (preserve existing labels).
+- Do NOT change assignee or status for these bugs.
+- Record each in the tracker under "Triaged This Week".
+
+#### 4c. Full triage loop for `needs_triage` bugs
+
+Process in priority order (Critical first, then Major, Normal, Minor, Undefined).
+
+**Group proposals by component/engineer when possible.** Rather than one-by-one confirmation, batch bugs of the same component and propose their assignments together (e.g. "Console bugs — propose assigning 4 to Jackson Lee, 3 to Robert Luby, 4 to Jon Jackson. Confirm?"). Always pause for each batch.
+
+For each bug:
+
+##### Action 1: Assess status
+- If status is POST, ON_QA, or Modified → handled in 4b above; skip here.
 - If status is ASSIGNED and the bug has NO linked PRs:
   - Propose: "OCPBUGS-XXXXX is ASSIGNED to [name] but has no linked PRs. Move back to New?"
   - **Wait for user confirmation**
-  - If confirmed: transition to New using `mcp__jira__jira_transition_issue` (transition_id=11), add comment using the "ASSIGNED->New (reassign)" template
-- If status is New → continue to next actions
+  - If confirmed: transition to New, add comment using the "ASSIGNED→New (reassign)" template
+- If status is New → continue to next actions.
 
-#### Action 2: Assess component
-- Check if the component is a known PIXAA component (Console, OLM, Hive, Cloud Compute, CCO, CVO, OSUS, Serverless, HyperShift, or subcomponents)
+##### Action 2: Assess component
+- Check if the component is a known PIXAA component (Console, OLM, Hive, Cloud Compute, CCO, CVO, OSUS, Serverless, HyperShift, or subcomponents).
 - If obviously not PIXAA → **ask user**: "OCPBUGS-XXXXX component is [component]. This doesn't look like a PIXAA component. Transfer? To which component?"
-- If unclear, assume correctly aligned and continue
+- If unclear, assume correctly aligned and continue.
 
-#### Action 3: Assess release blocker
-- Only if the bug appears to be a regression (has `component-regression` label or description mentions regression) AND priority is Critical or Major:
-  - Propose: "OCPBUGS-XXXXX looks like a potential release blocker. Set release blocker to Approved or Rejected?"
-  - **Wait for user input**
+##### Action 3: Assess release blocker
+- **Skip entirely if `panel_is_release_blockers = true`** (bug already has Release Blocker field set).
+- Otherwise, only trigger if the bug has `component-regression` label (or description mentions regression) AND priority is Critical or Major:
+  - Propose: "OCPBUGS-XXXXX looks like a potential release blocker. Set to Approved or Rejected?"
+  - **Wait for user input.**
 
-#### Action 4: Set priority
+##### Action 4: Set priority
 - If priority is Undefined:
-  - Read the bug summary, description (via `mcp__jira__jira_get_issue` if needed), and comments to assess
+  - Read the bug summary and description (fetch full issue if needed) to assess.
   - Apply the manual's priority criteria:
     - CVE → normally Critical
     - Regression already shipped, customers affected → Major or Critical
@@ -100,46 +129,82 @@ Process bugs in priority order (Critical first, then Major, Normal, Minor, Undef
     - Cosmetic, no functional impact → Minor
   - Propose: "OCPBUGS-XXXXX: propose [Priority] — [one-line reasoning]"
   - **Wait for user confirmation**
-  - If confirmed: update priority via `mcp__jira__jira_update_issue`, add comment using the priority template
+  - If confirmed: set priority, add comment using the priority template.
 
-#### Action 5: Assign engineer
-- If assignee is Unassigned or was just unassigned in Action 1:
-  - Match the bug's component to an engineer's expertise area
-  - Pick the engineer with the lowest current bug count among matching candidates
-  - Propose: "OCPBUGS-XXXXX ([component]): assign to [name] ([expertise], currently [N] bugs)?"
-  - **Wait for user confirmation**
-  - If confirmed: update assignee via `mcp__jira__jira_update_issue`
+##### Action 5: Assign engineer
+- If assignee is Unassigned (or was just unassigned in Action 1):
+  - **Default strategy: even load distribution across all engineers** (regardless of role label). Expertise area is used only as a tiebreaker when multiple engineers have equal bug counts.
+  - Pick the engineer(s) with the lowest current bug count.
+  - When proposing multiple bugs of the same component in a batch, distribute them round-robin among the lowest-loaded engineers.
+  - Propose the full batch: "Console bugs (N total): assign X to [engineer A], Y to [engineer B], Z to [engineer C]?"
+  - **Wait for user confirmation** — the user may adjust individual assignments.
+  - If confirmed: update assignees via Jira.
 
-#### Action 6: Add `triaged` label
-- If the bug doesn't have the `triaged` label:
-  - Add it via `mcp__jira__jira_update_issue` (preserve existing labels, append `triaged`)
-  - No user confirmation needed
+##### Action 6: Add `triaged` label
+- If the bug doesn't have the `triaged` label: add it (preserve all existing labels). No confirmation needed.
 
-#### Action 7: Handle unclear cases
-- If the bug doesn't have enough information to assess (no description, no repro steps, missing logs)
-- If the bug looks like a possible duplicate
-- If the bug needs SME knowledge beyond the RIT team
-- → **Pause and ask user**: "OCPBUGS-XXXXX: [describe the issue]. How do you want to handle this?"
+##### Action 7: Handle unclear cases
+- No description, no repro steps, missing logs, possible duplicate, needs SME → **Pause and ask user**: "OCPBUGS-XXXXX: [describe issue]. How do you want to handle this?"
 
-#### Action 8: Record
-- Append the bug to the "Triaged This Week" table in the tracker file
-- Update the "Assignment Distribution" table with the new assignment
-- If the bug was closed, add to the "Closed This Week" table
+### Step 5: Bulk tracker update
 
-### Step 5: Final summary
+After all bugs in the panel are processed, perform a **single bulk write** to the tracker file:
 
-After all bugs are processed, show:
+1. Append all newly triaged bugs to the "Triaged This Week" table.
+2. Rewrite the "Assignment Distribution" table with updated counts and keys (see Tracker Format).
+3. If any bugs were closed during triage, add them to "Closed This Week".
+
+### Step 6: Final summary
+
+Show:
 - Total bugs processed
-- Breakdown: triaged, skipped (POST/ON_QA), closed
+- Breakdown: fully triaged, label-only, POST/partially triaged, skipped (POST clean), closed
 - Updated assignment distribution table
-- Any bugs that were paused/skipped for user follow-up
+- Any bugs paused/skipped for user follow-up
+
+---
+
+## Tracker Format
+
+```markdown
+# RIT Triage Tracker — Week of YYYY-MM-DD (Pod Name)
+
+## Assignment Distribution
+
+| Engineer | Bugs Assigned | Keys |
+|----------|--------------|------|
+| Name | N | OCPBUGS-XXXXX, OCPBUGS-YYYYY, ... |
+
+## Triaged This Week
+
+| Bug | Summary | Status | Priority | Assignee | Actions Taken |
+|-----|---------|--------|----------|----------|---------------|
+
+## Closed This Week
+
+| Bug | Summary | Resolution |
+|-----|---------|------------|
+
+## Skipped (POST/ON_QA/Modified)
+
+| Bug | Summary | Status | Notes |
+|-----|---------|--------|-------|
+```
+
+The **Assignment Distribution** table must include **all engineers** from the roster (even those with 0 bugs assigned this week) and a **Keys** column listing every bug key assigned to that engineer, comma-separated.
+
+---
 
 ## Important Notes
 
-- **Automate the obvious, pause on judgment** — adding `triaged` labels is auto. Priority, assignee, component, release blocker always get a proposal + user confirmation.
-- **Always comment on status/assignee changes** — use the templates from rit_manual.md.
-- **Preserve existing labels** — when adding `triaged`, keep all existing labels on the bug.
-- **Respect PTO** — skip engineers marked as PTO in the roster.
-- **Load balance** — always consider current bug count when proposing assignees.
-- **One panel at a time** — the user decides which panel to triage and in what order.
+- **Automate the obvious, pause on judgment** — `triaged` labels are applied automatically. Priority, assignee, component transfer, and release blocker always require a user proposal + confirmation.
+- **POST/ON_QA bugs: partial triage only** — Never change status or assignee. Do apply missing priority (with comment) and `triaged` label.
+- **Even load distribution is the default** — Expertise area is a tiebreaker, not the primary criterion. All engineers (regardless of role label) receive bugs and appear in the distribution table.
+- **Batch proposals for efficiency** — Group assignment proposals by component/engineer rather than confirming one bug at a time.
+- **Bulk tracker write at end of panel** — Record all bugs in one write, not incrementally.
+- **Always comment on status/priority changes** — Use the templates from rit_manual.md.
+- **Preserve existing labels** — When adding `triaged`, keep all existing labels on the bug.
+- **Respect PTO** — Skip engineers explicitly marked as PTO in the roster.
+- **Release Blockers panel** — Bugs fetched via the Release Blockers panel already have the Release Blocker field set; skip Action 3 for all of them.
+- **Paths use the current working directory** — Never use hardcoded absolute paths for `rit_manual.md` or tracker files.
 - **If the Jira API can't update a field** (screen configuration error), tell the user to do it manually in the UI and continue with the next action.
