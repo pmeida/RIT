@@ -108,15 +108,22 @@ For each bug:
 - If status is New → continue to next actions.
 
 ##### Action 2: Assess component
+- **Always run — never skip, regardless of which panel the bug came from.**
 - Check if the component is a known PIXAA component (Console, OLM, Hive, Cloud Compute, CCO, CVO, OSUS, Serverless, HyperShift, or subcomponents).
+- **Also flag if the bug summary prominently names a different component than the Jira `components` field** (e.g. summary says "CCO" but component is "Storage / Operators") — treat this as a mismatch and ask the user.
 - If obviously not PIXAA → **ask user**: "OCPBUGS-XXXXX component is [component]. This doesn't look like a PIXAA component. Transfer? To which component?"
+- If the user confirms it's not PIXAA: do NOT run Actions 3–6. Do NOT assign, label, or set Release Blocker. Remove from tracker if already recorded. Continue to next bug.
 - If unclear, assume correctly aligned and continue.
 
-##### Action 3: Assess release blocker
-- **Skip entirely if `panel_is_release_blockers = true`** (bug already has Release Blocker field set).
-- Otherwise, only trigger if the bug has `component-regression` label (or description mentions regression) AND priority is Critical or Major:
-  - Propose: "OCPBUGS-XXXXX looks like a potential release blocker. Set to Approved or Rejected?"
-  - **Wait for user input.**
+##### Action 3: Set Release Blocker
+- **Mandatory for every PIXAA bug — always set to Approved, Proposed, or Rejected. Never leave null.**
+- If the panel is Release Blockers (`panel_is_release_blockers = true`): the field is already set — skip to Action 4.
+- For all other bugs, assess and propose:
+  - Bug is a regression (has `component-regression` label or description mentions regression) AND priority is Critical or Major → propose **Approved** or **Proposed**
+  - All other bugs → propose **Rejected** (this is the default — no release blocker)
+  - Propose: "OCPBUGS-XXXXX: Release Blocker → [Approved / Rejected]?"
+  - **Wait for user confirmation.**
+  - If confirmed: set `customfield_10847` via Jira.
 
 ##### Action 4: Set priority
 - If priority is Undefined:
@@ -198,6 +205,9 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 ## Important Notes
 
 - **Automate the obvious, pause on judgment** — `triaged` labels are applied automatically. Priority, assignee, component transfer, and release blocker always require a user proposal + confirmation.
+- **Action 2 is the gate — always run it, never skip it** — Even for the Release Blockers panel. If a bug is not PIXAA, make zero changes (no label, no assignee, no release blocker, no tracker entry) and move on. A bug appearing in a PIXAA panel does not guarantee it belongs to PIXAA.
+- **Summary ≠ Component** — If the bug summary prominently names a PIXAA component but the Jira `components` field points elsewhere (or vice versa), treat it as a mismatch and apply full Action 2 scrutiny before touching anything.
+- **Release Blocker is mandatory for every PIXAA bug** — Always set to Approved, Proposed, or Rejected. Never leave null after triage. Rejected is the default. Skip entirely for non-PIXAA bugs (Action 2 handles those before reaching Action 3).
 - **POST/ON_QA bugs: partial triage only** — Never change status or assignee. Do apply missing priority (with comment) and `triaged` label.
 - **Even load distribution is the default** — Expertise area is a tiebreaker, not the primary criterion. All engineers (regardless of role label) receive bugs and appear in the distribution table.
 - **Batch proposals for efficiency** — Group assignment proposals by component/engineer rather than confirming one bug at a time.
@@ -205,6 +215,6 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 - **Always comment on status/priority changes** — Use the templates from rit_manual.md.
 - **Preserve existing labels** — When adding `triaged`, keep all existing labels on the bug.
 - **Respect PTO** — Skip engineers explicitly marked as PTO in the roster.
-- **Release Blockers panel** — Bugs fetched via the Release Blockers panel already have the Release Blocker field set; skip Action 3 for all of them.
+- **Release Blockers panel** — Bugs fetched via the Release Blockers panel already have the Release Blocker field set; skip the assessment part of Action 3 but still verify the component in Action 2.
 - **Paths use the current working directory** — Never use hardcoded absolute paths for `rit_manual.md` or tracker files.
 - **If the Jira API can't update a field** (screen configuration error), tell the user to do it manually in the UI and continue with the next action.
