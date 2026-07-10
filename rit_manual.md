@@ -317,6 +317,8 @@ CVEs for many components under PIXAA will be handled by the sustaining engineeri
 
 Sustaining engineering bugs will appear by default on the PIXAA bugs [dashboard](https://redhat.atlassian.net/jira/dashboards/25023), however, they can be filtered with the “Sustaining” option under the Rich Filter Controller. Sustaining engineers should be able to self service their own bugs and they should not need attention from PIXAA engineers.
 
+**Sustaining label automation lag** — The `ocp-sustaining` label is applied automatically by a bot, but this can take up to **one hour** after a bug is created. During that window, sustaining bugs may appear in the Untriaged panel without the label, causing them to be picked up by RIT triage in error. Bugs with `arc:*` labels (e.g. `arc:devel`) are a signal that the sustaining bot will act on the ticket. If a bug was created less than an hour ago and has `arc:*` labels, do not triage it — check back after the label has been applied.
+
 For CVEs not handled by PIXAA, the RIT should aim to resolve these quickly. CVEs will have a due date assigned and we should endeavour to ensure that the due date is met for all CVEs. The due date is visible in the With Due Date panel of the PIXAA bugs dashboard.
 
 CVE exposure is based on a package level analysis. In some cases, a symbol level analysis will show that the component is not actually exposed to the vulnerability. In these cases the package should still be updated, but not attached to the bug. This ensures that we pre-emptively fix a potential future exposure, but do not alert customers to a “fix” that actually didn’t change the exposure. The bug should be closed as Not A Bug.

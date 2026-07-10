@@ -58,6 +58,7 @@ Read `rit_manual.md` from the **current working directory** (not a hardcoded pat
 3. Build an in-memory list of all bugs with their full context: key, summary, status, priority, assignee, labels, components.
 
 4. **Fast-path identification** — Classify each bug:
+   - `possible_sustaining`: created < 60 minutes ago AND has any label matching `arc:*` → the `ocp-sustaining` label may not have been applied yet by the sustaining automation; **automatically skip** — do not label, assign, or set Release Blocker; report at the end of the session
    - `needs_only_label`: has assignee ✓, has priority ✓, missing `triaged` label only → will be auto-applied, no confirmation needed
    - `needs_triage`: missing one or more of priority, assignee, or needs status transition
    - `post_missing_fields`: status is POST/ON_QA/Modified AND (missing priority OR missing `triaged` label) → apply missing fields only, skip status/assignment changes
@@ -70,6 +71,7 @@ Show:
 - Grouped by status: how many in New, ASSIGNED, POST, ON_QA, other
 - How many need: priority (Undefined), assignee (Unassigned), `triaged` label only, status transition (ASSIGNED)
 - How many POST/ON_QA bugs still have missing fields (will be partially acted on)
+- How many auto-skipped as `possible_sustaining` (created < 1h ago with `arc:*` labels)
 - Current RIT team load from tracker (engineer → bug count)
 
 If the panel has more than 10 bugs, offer a processing shortcut:
@@ -170,6 +172,7 @@ Show:
 - Breakdown: fully triaged, label-only, POST/partially triaged, skipped (POST clean), closed
 - Updated assignment distribution table
 - Any bugs paused/skipped for user follow-up
+- **Possible sustaining (auto-skipped)**: list any bugs skipped due to sustaining lag (created < 1h ago with `arc:*` labels) with a note: "These were skipped — created recently with `arc:*` labels; the `ocp-sustaining` label may still be pending. Re-check in ~1 hour."
 
 ---
 
@@ -218,5 +221,6 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 - **Preserve existing labels** — When adding `triaged`, keep all existing labels on the bug.
 - **Respect PTO** — Skip engineers explicitly marked as PTO in the roster.
 - **Release Blockers panel** — Bugs fetched via the Release Blockers panel already have the Release Blocker field set; skip the assessment part of Action 3 but still verify the component in Action 2.
+- **Sustaining label lag** — The `ocp-sustaining` label can take up to an hour to be applied by the sustaining bot after a bug is created. Bugs created < 60 minutes ago that carry `arc:*` labels are automatically skipped and listed at the end — do not triage them.
 - **Paths use the current working directory** — Never use hardcoded absolute paths for `rit_manual.md` or tracker files.
 - **If the Jira API can't update a field** (screen configuration error), tell the user to do it manually in the UI and continue with the next action.
