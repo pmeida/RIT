@@ -216,14 +216,21 @@ The bug is now pending release. No further action is required by the RIT.
 
 When changing a bug's status or assignee during triage, add a comment explaining the change. Use these templates:
 
-**ASSIGNED → New (reassigning to RIT):**
-> Per the PIXAA bug lifecycle, bugs in ASSIGNED status should have the issue identified with active work toward completion. No linked PRs or code activity found during RIT triage review. Moving back to New and reassigning to the current RIT rotation for investigation.
 
-**ASSIGNED → New (keeping assignee):**
-> Per the PIXAA bug lifecycle, bugs in ASSIGNED status should have the issue identified with active work toward completion. Moving back to New to align with actual investigation stage. Keeping current assignee.
+**ASSIGNED — no linked PRs (ownership check):**
+> @{assignee} RIT triage: this bug is in ASSIGNED status but has no linked PRs or visible code activity. If you are still actively working on this, no action is needed. If you are not intending to work on it, please move it back to New and unassign yourself so the next RIT rotation can pick it up.
 
 **Setting priority (from Undefined):**
 > RIT triage: setting priority to *{Priority}*. {One sentence reasoning — customer impact, severity, workaround availability.}
+
+**PR-closed reset (Prow Bot):**
+> @{assignee} — RIT triage: this bug was automatically moved back to New when a linked PR was closed. Please take one of the following actions: (1) open a new PR and link it to this bug, or (2) close this ticket if the work is no longer being pursued.
+
+**EOW cleanup — unassignment:**
+> RIT end-of-week cleanup: this bug was not picked up during the current rotation. Removing the assignee so it can be reassessed and picked up by the next rotation.
+
+**Sweep — stale triaged bug:**
+> @{assignee} — RIT health check: this bug has been triaged and assigned but has had no visible activity for {N} days. Please provide an update on the current status. If you are no longer working on this, please move it back to New and unassign yourself so it can be picked up.
 
 ### Overall bug lifecycle
 
@@ -546,6 +553,22 @@ Cincinnati is a service powering OpenShift updates. Data about version support i
 PRs that add a supported upgrade version are created and merged automatically. If any of these promotions fail, take action as soon as possible; Cincinnati is a time-sensitive pipeline. If you do not have permissions to resolve conflicts in the GitHub UI, open a PR and ping someone listed in [https://github.com/openshift/cincinnati-graph-data/blob/master/OWNERS\_ALIASES](https://github.com/openshift/cincinnati-graph-data/blob/master/OWNERS_ALIASES).
 
 [https://redhat.atlassian.net/browse/PIXAA-8](https://redhat.atlassian.net/browse/PIXAA-8) has been captured to help automate simple git conflicts.
+
+# Shared Constants
+
+These values are referenced by all three RIT skills. Update here when they change — do not update individual skill files independently.
+
+**PIXAA base filter** (used in all JQL queries):
+```
+filter in ("operator-framework-all-bugs", "PIXAA HIVE bugs", "PIXAA CCO bugs", "PIXAA OCPCLOUD bugs", "PIXAA Console bugs", "PIXAA MCP Server Bugs", "PIXAA Serverless Bugs", "All OTA Bugs")
+```
+
+**Prow Bot PR-closed reset comment string** (used to detect automated resets):
+```
+Bug status changed to NEW as previous linked PR
+```
+
+---
 
 # PIXAA Bugs Dashboard JQL Queries
 

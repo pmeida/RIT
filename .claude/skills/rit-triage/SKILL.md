@@ -2,7 +2,7 @@
 name: rit-triage
 description: Triage bugs from a PIXAA dashboard panel — assess, prioritize, assign to RIT team, and record
 argument-hint: "<panel-name> — e.g. 'With Customer Cases', 'Component Regressions', 'Untriaged'"
-allowed-tools: Read, Edit, Write, mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql, mcp__plugin_jira_atlassian__getJiraIssue, mcp__plugin_jira_atlassian__editJiraIssue, mcp__plugin_jira_atlassian__transitionJiraIssue, mcp__plugin_jira_atlassian__addCommentToJiraIssue, mcp__plugin_jira_atlassian__getTransitionsForJiraIssue
+allowed-tools: Read, Edit, Write, mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql, mcp__plugin_jira_atlassian__getJiraIssue, mcp__plugin_jira_atlassian__editJiraIssue, mcp__plugin_jira_atlassian__addCommentToJiraIssue, mcp__plugin_jira_atlassian__getJiraIssueRemoteIssueLinks
 ---
 
 # RIT Triage
@@ -30,7 +30,7 @@ The panel name is matched fuzzily against the "PIXAA Bugs Dashboard JQL Queries"
 
 Read `rit_manual.md` from the **current working directory** (not a hardcoded path) and extract:
 
-1. **JQL query** — Find the "PIXAA Bugs Dashboard JQL Queries" section. Locate the table row whose panel name fuzzy-matches the `<panel-name>` argument (case-insensitive, partial match, ignore leading "With"). Construct the full JQL:
+1. **JQL query** — Read the "Shared Constants" section to load the canonical PIXAA base filter and Prow Bot reset string. Then find the "PIXAA Bugs Dashboard JQL Queries" section. Locate the table row whose panel name fuzzy-matches the `<panel-name>` argument (case-insensitive, partial match, ignore leading "With"). Construct the full JQL:
    - Base filter: `filter in ("operator-framework-all-bugs", "PIXAA HIVE bugs", "PIXAA CCO bugs", "PIXAA OCPCLOUD bugs", "PIXAA Console bugs", "PIXAA MCP Server Bugs", "PIXAA Serverless Bugs", "All OTA Bugs")`
    - Plus the panel's extra conditions from the table
    - Plus common triage condition: `(labels is EMPTY or labels not in (triaged) or assignee is EMPTY or priority is EMPTY) and (labels not in (ocp-sustaining) or labels is EMPTY)`
@@ -41,9 +41,9 @@ Read `rit_manual.md` from the **current working directory** (not a hardcoded pat
 
    Also note whether the panel JQL already filters by Release Blocker status (e.g. `"Release Blocker" in (Approved, Proposed)`). If it does, set a flag `panel_is_release_blockers = true` — this suppresses Action 3 (release blocker assessment) since the field is already set.
 
-2. **RIT team roster** — Find the "Current RIT Rotation" section. Parse the Engineering table to get: name, email, Jira Account ID, area of expertise, notes (e.g. PTO). Include **all** engineers in the table regardless of their role label (RIT Member, Triage Monitor, QA Monitor, Monitor, etc.). Skip only engineers explicitly marked as PTO.
+2. **RIT team roster** — Find the "Current RIT Rotation" section. Extract the week-start date from the heading. If that date is more than 7 days in the past, **stop and warn the user**: "⚠️ The RIT rotation in `rit_manual.md` appears stale. Please update the Current RIT Rotation section before running triage." Do not proceed until the user confirms the section is up to date. Then parse the Engineering table to get: name, email, Jira Account ID, area of expertise, notes (e.g. PTO). Include **all** engineers regardless of their role label. Skip only engineers explicitly marked as PTO.
 
-3. **Comment templates** — Find the "Comment templates for status transitions" section. Load the templates for ASSIGNED→New (reassign), ASSIGNED→New (keep), and priority setting.
+3. **Comment templates** — Find the "Comment templates for status transitions" section. Load the templates for "ASSIGNED — no linked PRs (ownership check)", "PR-closed reset (Prow Bot)", and "Setting priority (from Undefined)".
 
 4. **Release Blocker rules** — Read `release_blocker_rules.md` from the same directory as this skill file. Load the A/C/R/P rule tables for use in Action 3. Also read the `CURRENT_RELEASE` value from the top of that file — use it when evaluating version-scoped rules (e.g. flagging bugs whose Affects Version does not match the current GA target).
 
@@ -57,8 +57,9 @@ Read `rit_manual.md` from the **current working directory** (not a hardcoded pat
 
 3. Build an in-memory list of all bugs with their full context: key, summary, status, priority, assignee, labels, components.
 
-4. **Fast-path identification** — Classify each bug:
+4. **Fast-path identification** — Classify each bug (evaluated in order; first match wins):
    - `possible_sustaining`: created < 60 minutes ago AND has any label matching `arc:*` → the `ocp-sustaining` label may not have been applied yet by the sustaining automation; **automatically skip** — do not label, assign, or set Release Blocker; report at the end of the session
+   - `needs_only_assignee`: has `triaged` label ✓, has priority ✓, missing assignee only, **status is New or ASSIGNED** → the bug was fully triaged in a prior rotation (release blocker and priority are already assessed); still run Action 2 (component check — always mandatory), then skip Actions 3 and 4, go directly to Action 5 to assign an engineer
    - `needs_only_label`: has assignee ✓, has priority ✓, missing `triaged` label only → will be auto-applied, no confirmation needed
    - `needs_triage`: missing one or more of priority, assignee, or needs status transition
    - `post_missing_fields`: status is POST/ON_QA/Modified AND (missing priority OR missing `triaged` label) → apply missing fields only, skip status/assignment changes
@@ -69,7 +70,7 @@ Read `rit_manual.md` from the **current working directory** (not a hardcoded pat
 Show:
 - Total bug count
 - Grouped by status: how many in New, ASSIGNED, POST, ON_QA, other
-- How many need: priority (Undefined), assignee (Unassigned), `triaged` label only, status transition (ASSIGNED)
+- How many need: priority (Undefined), assignee (Unassigned), `triaged` label only, assignee only (previously triaged), status transition (ASSIGNED)
 - How many POST/ON_QA bugs still have missing fields (will be partially acted on)
 - How many auto-skipped as `possible_sustaining` (created < 1h ago with `arc:*` labels)
 - Current RIT team load from tracker (engineer → bug count)
@@ -83,11 +84,19 @@ If the user says no, stop.
 
 ### Step 4: Process bugs
 
-#### 4a. Auto-apply `triaged` label to `needs_only_label` bugs
+#### 4a. Assign engineer to `needs_only_assignee` bugs
 
-For all bugs classified as `needs_only_label`: apply the `triaged` label immediately in parallel (batch Jira calls where possible). No user confirmation needed. Record each in the tracker.
+For bugs classified as `needs_only_assignee` (previously fully triaged, missing assignee only):
+- **Always run Action 2 first** (component check — mandatory for every PIXAA bug). If Action 2 reveals the bug is not PIXAA, stop and skip it entirely; do not assign.
+- If component is confirmed PIXAA: batch propose assignments using the same even-load strategy as Action 5 — group by component where possible, propose to the user, and on confirmation assign via Jira.
+- Skip Actions 3 and 4 (release blocker and priority already set in prior triage).
+- Record each in the tracker.
 
-#### 4b. Apply missing fields to `post_missing_fields` bugs
+#### 4b. Auto-apply `triaged` label to `needs_only_label` bugs
+
+For all bugs classified as `needs_only_label`: apply the `triaged` label immediately in parallel. No user confirmation needed. Record each in the tracker.
+
+#### 4c. Apply missing fields to `post_missing_fields` bugs
 
 For bugs in POST/ON_QA/Modified status that are still missing fields:
 - If priority is Undefined: assess and propose priority (see Action 4 below). Wait for confirmation, then set it and add the priority comment.
@@ -95,7 +104,7 @@ For bugs in POST/ON_QA/Modified status that are still missing fields:
 - Do NOT change assignee or status for these bugs.
 - Record each in the tracker under "Triaged This Week".
 
-#### 4c. Full triage loop for `needs_triage` bugs
+#### 4d. Full triage loop for `needs_triage` bugs
 
 Process in priority order (Critical first, then Major, Normal, Minor, Undefined).
 
@@ -104,12 +113,16 @@ Process in priority order (Critical first, then Major, Normal, Minor, Undefined)
 For each bug:
 
 ##### Action 1: Assess status
-- If status is POST, ON_QA, or Modified → handled in 4b above; skip here.
+- If status is POST, ON_QA, or Modified → handled in 4c above; skip here.
 - If status is ASSIGNED and the bug has NO linked PRs:
-  - Propose: "OCPBUGS-XXXXX is ASSIGNED to [name] but has no linked PRs. Move back to New?"
-  - **Wait for user confirmation**
-  - If confirmed: transition to New, add comment using the "ASSIGNED→New (reassign)" template
-- If status is New → continue to next actions.
+  - Fetch remote links (`getJiraIssueRemoteIssueLinks`) to confirm no PR is linked.
+  - Post the "ASSIGNED — no linked PRs (ownership check)" comment, @-mentioning the assignee.
+  - Do NOT transition the status or change the assignee. No user confirmation needed.
+- If status is `New` AND assignee is already set:
+  - Fetch the full issue with comments (`getJiraIssue` with `comment` field). Check for an **OpenShift Prow Bot** comment containing `"Bug status changed to NEW as previous linked PR"`.
+  - If found: post the "PR-closed reset (Prow Bot)" comment, @-mentioning the assignee. Continue with Actions 2–6 as normal (the bug still needs its missing fields set; do NOT change the assignee).
+  - If not found: continue to next actions normally.
+- If status is New AND assignee is empty → continue to next actions.
 
 ##### Action 2: Assess component
 - **Always run — never skip, regardless of which panel the bug came from.**
@@ -140,10 +153,10 @@ For each bug:
     - Cosmetic, no functional impact → Minor
   - Propose: "OCPBUGS-XXXXX: propose [Priority] — [one-line reasoning]"
   - **Wait for user confirmation**
-  - If confirmed: set priority, add comment using the priority template.
+  - If confirmed: set priority, add comment using the "Setting priority (from Undefined)" template.
 
 ##### Action 5: Assign engineer
-- If assignee is Unassigned (or was just unassigned in Action 1):
+- If assignee is Unassigned:
   - **Default strategy: even load distribution across all engineers** (regardless of role label). Expertise area is used only as a tiebreaker when multiple engineers have equal bug counts.
   - Pick the engineer(s) with the lowest current bug count.
   - When proposing multiple bugs of the same component in a batch, distribute them round-robin among the lowest-loaded engineers.
@@ -221,6 +234,7 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 - **Preserve existing labels** — When adding `triaged`, keep all existing labels on the bug.
 - **Respect PTO** — Skip engineers explicitly marked as PTO in the roster.
 - **Release Blockers panel** — Bugs fetched via the Release Blockers panel already have the Release Blocker field set; skip the assessment part of Action 3 but still verify the component in Action 2.
+- **PR-closed reset** — Two cases: (1) Bug was **fully triaged** (triaged ✓, priority ✓, assignee ✓) before the PR closed — all fields are retained, bug is invisible to this skill's JQL, handled exclusively by `/rit-sweep`. (2) Bug was **partially triaged** (missing at least one field) — it appears in the JQL and Action 1 detects the Prow Bot comment, posts the PR-closed reset notification, then continues normally through Actions 2–6 to finish setting the missing fields.
 - **Sustaining label lag** — The `ocp-sustaining` label can take up to an hour to be applied by the sustaining bot after a bug is created. Bugs created < 60 minutes ago that carry `arc:*` labels are automatically skipped and listed at the end — do not triage them.
 - **Paths use the current working directory** — Never use hardcoded absolute paths for `rit_manual.md` or tracker files.
 - **If the Jira API can't update a field** (screen configuration error), tell the user to do it manually in the UI and continue with the next action.
