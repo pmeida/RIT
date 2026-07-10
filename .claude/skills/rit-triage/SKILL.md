@@ -45,7 +45,9 @@ Read `rit_manual.md` from the **current working directory** (not a hardcoded pat
 
 3. **Comment templates** — Find the "Comment templates for status transitions" section. Load the templates for ASSIGNED→New (reassign), ASSIGNED→New (keep), and priority setting.
 
-4. **Tracker file** — Look for an existing `triaged_bugs_YYYY-MM-DD.md` file in the **current working directory** where the date matches the current RIT rotation week start date from the "Current RIT Rotation" heading. If it exists, read the current assignment distribution to know each engineer's current bug count and already-assigned keys. If it doesn't exist, create it with the standard header and empty tables (see Tracker Format below).
+4. **Release Blocker rules** — Read `release_blocker_rules.md` from the same directory as this skill file. Load the A/C/R/P rule tables for use in Action 3. Also read the `CURRENT_RELEASE` value from the top of that file — use it when evaluating version-scoped rules (e.g. flagging bugs whose Affects Version does not match the current GA target).
+
+5. **Tracker file** — Look for an existing `triaged_bugs_YYYY-MM-DD.md` file in the **current working directory** where the date matches the current RIT rotation week start date from the "Current RIT Rotation" heading. If it exists, read the current assignment distribution to know each engineer's current bug count and already-assigned keys. If it doesn't exist, create it with the standard header and empty tables (see Tracker Format below).
 
 ### Step 2: Fetch all bugs
 
@@ -118,12 +120,12 @@ For each bug:
 ##### Action 3: Set Release Blocker
 - **Mandatory for every PIXAA bug — always set to Approved, Proposed, or Rejected. Never leave null.**
 - If the panel is Release Blockers (`panel_is_release_blockers = true`): the field is already set — skip to Action 4.
-- For all other bugs, assess and propose:
-  - Bug is a regression (has `component-regression` label or description mentions regression) AND priority is Critical or Major → propose **Approved** or **Proposed**
-  - All other bugs → propose **Rejected** (this is the default — no release blocker)
-  - Propose: "OCPBUGS-XXXXX: Release Blocker → [Approved / Rejected]?"
-  - **Wait for user confirmation.**
-  - If confirmed: set `customfield_10847` via Jira.
+- For all other bugs, evaluate using the rules in `release_blocker_rules.md` (same directory as this skill). Read that file at the start of any triage session — it contains the full A/C/R/P rule tables and evaluation flow.
+- Fetch the full issue (`getJiraIssue`) if you need the description or labels not already loaded.
+- Apply the evaluation flow in order: A-series (auto-approve) → C-series (conditional/proposed) → R-series (reject). Include the rule ID(s) and one-line reason in your proposal.
+- Propose: `"OCPBUGS-XXXXX: Release Blocker → [Approved / Proposed / Rejected] [rule ID — reason]?"`
+- **Wait for user confirmation.**
+- If confirmed: set `customfield_10847` via Jira.
 
 ##### Action 4: Set priority
 - If priority is Undefined:
@@ -207,7 +209,7 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 - **Automate the obvious, pause on judgment** — `triaged` labels are applied automatically. Priority, assignee, component transfer, and release blocker always require a user proposal + confirmation.
 - **Action 2 is the gate — always run it, never skip it** — Even for the Release Blockers panel. If a bug is not PIXAA, make zero changes (no label, no assignee, no release blocker, no tracker entry) and move on. A bug appearing in a PIXAA panel does not guarantee it belongs to PIXAA.
 - **Summary ≠ Component** — If the bug summary prominently names a PIXAA component but the Jira `components` field points elsewhere (or vice versa), treat it as a mismatch and apply full Action 2 scrutiny before touching anything.
-- **Release Blocker is mandatory for every PIXAA bug** — Always set to Approved, Proposed, or Rejected. Never leave null after triage. Rejected is the default. Skip entirely for non-PIXAA bugs (Action 2 handles those before reaching Action 3).
+- **Release Blocker is mandatory for every PIXAA bug** — Always set to Approved, Proposed, or Rejected. Never leave null after triage. Use the full rule set from `release_blocker_rules.md` (A/C/R/P framework); Rejected is the default when no A or C rule matches. Always cite the rule ID(s) in your proposal. Skip entirely for non-PIXAA bugs (Action 2 handles those before reaching Action 3).
 - **POST/ON_QA bugs: partial triage only** — Never change status or assignee. Do apply missing priority (with comment) and `triaged` label.
 - **Even load distribution is the default** — Expertise area is a tiebreaker, not the primary criterion. All engineers (regardless of role label) receive bugs and appear in the distribution table.
 - **Batch proposals for efficiency** — Group assignment proposals by component/engineer rather than confirming one bug at a time.
