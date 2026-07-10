@@ -218,19 +218,19 @@ When changing a bug's status or assignee during triage, add a comment explaining
 
 
 **ASSIGNED — no linked PRs (ownership check):**
-> @{assignee} RIT triage: this bug is in ASSIGNED status but has no linked PRs or visible code activity. If you are still actively working on this, no action is needed. If you are not intending to work on it, please move it back to New and unassign yourself so the next RIT rotation can pick it up.
+> RIT triage: this bug is in ASSIGNED status but has no linked PRs or visible code activity. If you are still actively working on this, no action is needed. If you are not intending to work on it, please move it back to New and unassign yourself so the next RIT rotation can pick it up.
 
 **Setting priority (from Undefined):**
 > RIT triage: setting priority to *{Priority}*. {One sentence reasoning — customer impact, severity, workaround availability.}
 
 **PR-closed reset (Prow Bot):**
-> @{assignee} — RIT triage: this bug was automatically moved back to New when a linked PR was closed. Please take one of the following actions: (1) open a new PR and link it to this bug, or (2) close this ticket if the work is no longer being pursued.
+> RIT triage: this bug was automatically moved back to New when a linked PR was closed. Please take one of the following actions: (1) open a new PR, link it to this bug and update the status, or (2) close this ticket if the work is no longer being pursued.
 
 **EOW cleanup — unassignment:**
 > RIT end-of-week cleanup: this bug was not picked up during the current rotation. Removing the assignee so it can be reassessed and picked up by the next rotation.
 
 **Sweep — stale triaged bug:**
-> @{assignee} — RIT health check: this bug has been triaged and assigned but has had no visible activity for {N} days. Please provide an update on the current status. If you are no longer working on this, please move it back to New and unassign yourself so it can be picked up.
+> RIT health check: this bug has been triaged and assigned but has had no visible activity for {N} days. Please provide an update on the current status. If you are no longer working on this, please move it back to New and unassign yourself so it can be picked up.
 
 ### Overall bug lifecycle
 

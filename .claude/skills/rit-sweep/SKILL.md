@@ -116,13 +116,13 @@ If the user says no, stop.
 #### 5a. PR-closed reset bugs
 
 For each `pr_closed_reset` bug — automatically, no user confirmation needed:
-- Post the "PR-closed reset (Prow Bot)" comment, @-mentioning the assignee.
+- Post the "PR-closed reset (Prow Bot)" comment.
 
 #### 5b. Stale bugs (comment only)
 
 For each `stale` or `stale_comment_only` bug — automatically, no user confirmation needed:
-- Post the "Sweep — stale triaged bug" comment, @-mentioning the assignee and
-  substituting `{N}` with the actual number of days since the last update.
+- Post the "Sweep — stale triaged bug" comment, substituting `{N}` with the actual number
+  of days since the last update.
 
 #### 5c. Stale bugs with unassignment (`--unassign` mode only)
 
