@@ -160,3 +160,4 @@ Show:
 - **Stale threshold is configurable** — default 14 days for comment mode; recommend 30+ days
   before using `--unassign` to avoid cleaning up bugs that are simply slow-moving.
 - **Paths use the current working directory** — never hardcode paths.
+- **All comments must be Red Hat Employee only** — every `addCommentToJiraIssue` call must include `commentVisibility: {"type": "group", "value": "Red Hat Employee"}`. These are internal process notes and must not be publicly visible.

@@ -179,3 +179,5 @@ Show:
 - **Batch by engineer** — propose all of one engineer's stale bugs at once for efficiency.
 - **Always comment before unassigning** — never silently remove an assignee.
 - **Paths use the current working directory** — never hardcode paths.
+- **All comments must be Red Hat Employee only** — every `addCommentToJiraIssue` call must include `commentVisibility: {"type": "group", "value": "Red Hat Employee"}`. These are internal process notes and must not be publicly visible.
+- **Skip EOW comment if bug is already closed** — after calling `editJiraIssue`, check the returned `status.statusCategory.key`. If it is `done`, the bug was closed concurrently; skip posting the comment (the unassignment is a no-op).

@@ -238,3 +238,4 @@ The **Assignment Distribution** table must include **all engineers** from the ro
 - **Sustaining label lag** — The `ocp-sustaining` label can take up to an hour to be applied by the sustaining bot after a bug is created. Bugs created < 60 minutes ago that carry `arc:*` labels are automatically skipped and listed at the end — do not triage them.
 - **Paths use the current working directory** — Never use hardcoded absolute paths for `rit_manual.md` or tracker files.
 - **If the Jira API can't update a field** (screen configuration error), tell the user to do it manually in the UI and continue with the next action.
+- **All comments must be Red Hat Employee only** — every `addCommentToJiraIssue` call must include `commentVisibility: {"type": "group", "value": "Red Hat Employee"}`. These are internal process notes and must not be publicly visible.
