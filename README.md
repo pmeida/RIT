@@ -1,28 +1,31 @@
 # RIT Triage with Claude Code
 
-This repo contains the `/rit-triage` Claude Code skill for automating PIXAA bug triage during RIT (Rotational Interrupt Team) weeks.
+This repo contains Claude Code skills for automating the PIXAA RIT (Rotational Interrupt Team)
+bug triage workflow. Three skills cover the full rotation lifecycle — from triaging new bugs
+during the week, to end-of-week cleanup, to ongoing health checks.
 
-## What it does
+---
 
-The `/rit-triage` skill automates the triage monitor workflow:
+## Skills
 
-1. Fetches bugs from a PIXAA dashboard panel via Jira API
-2. Loops through each bug and proposes triage actions:
-   - Status transitions (e.g. ASSIGNED with no PRs -> New)
-   - Priority assessment (CVE, regression, customer impact)
-   - Engineer assignment (load-balanced, expertise-matched)
-   - `triaged` label application
-3. Records everything in a tracker file (`triaged_bugs_YYYY-MM-DD.md`)
+### `/rit-triage` — Triage incoming bugs
 
-**Key principle: automate the obvious, pause on judgment.** Labels are applied automatically. Priority, assignee, and status changes always get a proposal and wait for confirmation.
+Run throughout the week to triage bugs from any PIXAA dashboard panel.
 
-## Usage
+**What it does:**
+- Fetches bugs from a dashboard panel via the Jira MCP server
+- Classifies each bug and proposes triage actions:
+  - Priority assessment (CVE, regression, customer impact)
+  - Release Blocker evaluation (using the A/C/R/P rule framework)
+  - Engineer assignment (even load distribution, expertise as tiebreaker)
+  - `triaged` label application
+  - Ownership check comment for ASSIGNED bugs with no linked PRs
+  - PR-closed reset detection (Prow Bot) and notification
+- Records all actions in a weekly tracker file (`triaged_bugs_YYYY-MM-DD.md`)
 
-```
-/rit-triage <panel-name>
-```
-
-Panel names match the PIXAA Bugs Dashboard:
+**Key principle:** automate the obvious, pause on judgment. Labels are applied automatically.
+Priority, assignee, component checks, and Release Blocker always get a proposal and wait for
+confirmation.
 
 ```
 /rit-triage With Customer Cases
@@ -35,72 +38,120 @@ Panel names match the PIXAA Bugs Dashboard:
 /rit-triage All Open
 ```
 
-## Dependencies
+Panel names are matched fuzzily — partial names and missing leading words are accepted.
 
-### 1. Jira MCP Server (required)
+---
 
-The skill uses the Jira MCP server for all bug operations. You need a working Jira MCP connection configured in your Claude Code settings with access to the OCPBUGS project.
+### `/rit-unassign` — End-of-week cleanup
 
-Tools used: `jira_search`, `jira_get_issue`, `jira_update_issue`, `jira_transition_issue`, `jira_add_comment`, `jira_get_transitions`, `jira_get_issues_development_info`
+Run once at the end of the rotation week, before the next team starts.
 
-### 2. RIT Manual (`rit_manual.md`) (required)
+**What it does:**
+- Reads the current week's tracker to find bugs assigned by `/rit-triage`
+- Skips bugs whose assignee is not in the current RIT roster (external engineers keep their bugs)
+- Skips bugs that have progressed (ASSIGNED, POST, etc.), have a linked PR, or were Prow Bot reset
+- For remaining stale bugs (still in `New`, no PR, no Prow Bot reset): proposes unassignment
+  grouped by engineer, waits for confirmation, then removes assignee and posts a comment
+- Result: next rotation's `/rit-triage` picks up unassigned bugs via the `needs_only_assignee`
+  fast-path (no re-triage of component/priority/release blocker needed)
 
-The skill reads `rit_manual.md` from the working directory to get:
-
-- **JQL queries** for each dashboard panel
-- **Team roster** with engineer names, Jira account IDs, and areas of expertise
-- **Comment templates** for status transitions and priority changes
-- **Priority criteria** for bug assessment
-
-You must update this file each rotation with:
-- Current RIT rotation engineers (mark PTO engineers)
-- Any changes to JQL filters or dashboard panels
-
-### 3. Team Roster in CLAUDE.md (recommended)
-
-For assignee mapping, the skill needs Jira account IDs for each engineer. These can live in either `rit_manual.md` or your `CLAUDE.md`. Example format:
-
-```markdown
-| Short name | Full name | Jira Account ID |
-|------------|-----------|-----------------|
-| alice | Alice Smith | 712020:abc123-... |
-| bob | Bob Jones | 557058:def456-... |
+```
+/rit-unassign
 ```
 
-### 4. Tracker File (auto-created)
+---
 
-The skill creates `triaged_bugs_YYYY-MM-DD.md` on first run. It tracks:
-- Bugs triaged this week (key, summary, priority, assignee, status)
-- Assignment distribution per engineer
-- Bugs closed this week
+### `/rit-sweep` — Health check
+
+Run on-demand (e.g. mid-week or periodically) to catch bugs invisible to the other two skills.
+
+**What it does:**
+- Finds triaged, assigned bugs stuck in `New` — these have all fields set so `/rit-triage`
+  can't see them, and they may not be in the current week's tracker
+- Detects Prow Bot PR-closed resets and posts a notification to the developer
+- Detects stale bugs (no activity for N days) and posts a nudge comment
+- With `--unassign`: also proposes removing assignments for stale RIT-roster engineers
+  after confirmation (never unassigns PR-closed reset bugs or external engineers)
+
+```
+/rit-sweep
+/rit-sweep --stale-days 30
+/rit-sweep --stale-days 30 --unassign
+```
+
+Default stale threshold is 14 days. Use `--stale-days 30` or higher before `--unassign`
+to avoid cleaning up bugs that are simply slow-moving.
+
+---
+
+## Typical weekly workflow
+
+```
+Everyday    /rit-triage Untriaged          ← triage new bugs
+            /rit-triage With Due Date
+            /rit-triage Component Regressions
+            ...
+
+Mid-week    /rit-sweep                     ← health check, PR-closed nudges
+
+Friday EOW  /rit-unassign                  ← clean up stale assignments
+            /rit-sweep --stale-days 30 --unassign   ← optional deeper cleanup
+```
+
+---
 
 ## Setup
 
-1. Clone this repo into your working directory
-2. Configure the Jira MCP server in Claude Code
-3. Update `rit_manual.md` with your rotation's team roster and JQL filters
-4. Run `/rit-triage <panel-name>` to start triaging
+### 1. Jira MCP Server (required)
 
-## End-of-Week Cleanup
+All three skills use the Jira MCP server. Configure a working connection in your Claude Code
+settings with access to the OCPBUGS project.
 
-At end of week, unassign all triaged bugs still in New status:
+### 2. Update `rit_manual.md` each rotation (required)
+
+Before running any skill, update the `# Current RIT Rotation` section with:
+- The week-start date and pod name in the heading
+- RIT Lead in the Non-Engineering table
+- All engineers in the Engineering table (name, email, Jira Account ID, expertise, notes)
+- Mark PTO engineers in the Notes column
+
+The heading format must be: `# Current RIT Rotation — Week of YYYY-MM-DD (Pod Name)`
+
+`/rit-triage` will stop and warn if this section appears stale (> 7 days old).
+
+### 3. Release blocker rules (already configured)
+
+The `.claude/skills/rit-triage/release_blocker_rules.md` file contains the full A/C/R/P
+evaluation framework. Update `CURRENT_RELEASE` at the top of that file when the GA target
+changes:
 
 ```
-Action: unassign all bugs in triaged_bugs_YYYY-MM-DD.md that are
-assigned to read group engineers AND still in New status
+CURRENT_RELEASE = 5.0
 ```
 
-This ensures the next rotation picks them up fresh and they're visible under "Show triaged (ignore assignee)" in the PIXAA dashboard.
+### 4. Tracker file (auto-created)
 
-## File Structure
+`/rit-triage` creates `triaged_bugs_YYYY-MM-DD.md` on first run for the week. It records:
+- Assignment distribution per engineer
+- All bugs triaged this week with actions taken
+- Bugs closed during triage
+
+---
+
+## File structure
 
 ```
 RIT/
-├── README.md                        # This file
-├── rit_manual.md                    # RIT process manual, JQL queries, team roster
-├── triaged_bugs_YYYY-MM-DD.md       # Weekly tracker (auto-created)
+├── README.md                          # This file
+├── rit_manual.md                      # RIT process manual, JQL queries, team roster, templates
+├── triaged_bugs_YYYY-MM-DD.md         # Weekly tracker (auto-created by /rit-triage)
 └── .claude/
     └── skills/
-        └── rit-triage/
-            └── SKILL.md             # The triage skill definition
+        ├── rit-triage/
+        │   ├── SKILL.md               # Triage skill definition
+        │   └── release_blocker_rules.md  # A/C/R/P release blocker evaluation rules
+        ├── rit-unassign/
+        │   └── SKILL.md               # EOW cleanup skill definition
+        └── rit-sweep/
+            └── SKILL.md               # Health check skill definition
 ```
