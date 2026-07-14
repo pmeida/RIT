@@ -1,11 +1,11 @@
 ---
-name: rit-unassign
+name: rit-end
 description: End-of-week RIT cleanup — remove stale assignments from bugs assigned by /rit-triage so the next rotation starts with a clean slate
 argument-hint: "(no arguments required)"
 allowed-tools: Read, Edit, Write, mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql, mcp__plugin_jira_atlassian__getJiraIssue, mcp__plugin_jira_atlassian__editJiraIssue, mcp__plugin_jira_atlassian__addCommentToJiraIssue, mcp__plugin_jira_atlassian__getJiraIssueRemoteIssueLinks
 ---
 
-# RIT Unassign
+# RIT End
 
 End-of-week cleanup skill. Reads the current rotation tracker file to identify exactly which
 bugs were assigned by `/rit-triage` this week, then removes stale assignments for bugs not
@@ -14,7 +14,7 @@ picked up. Only operates on bugs in the tracker whose current assignee is in the
 ## Usage
 
 ```
-/rit-unassign
+/rit-end
 ```
 
 Run at the end of the RIT rotation week, before the next rotation begins.

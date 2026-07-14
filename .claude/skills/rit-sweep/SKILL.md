@@ -8,7 +8,7 @@ allowed-tools: Read, mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql, mcp__
 # RIT Sweep
 
 Health check skill. Finds triaged bugs stuck in `New` status that are invisible to both
-`/rit-triage` (already triaged) and `/rit-unassign` (not in the current tracker). Handles
+`/rit-triage` (already triaged) and `/rit-end` (not in the current tracker). Handles
 two cases:
 
 1. **PR-closed reset** — bug was reset to `New` by Prow Bot after a PR was closed.

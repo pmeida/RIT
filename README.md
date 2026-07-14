@@ -42,7 +42,7 @@ Panel names are matched fuzzily — partial names and missing leading words are 
 
 ---
 
-### `/rit-unassign` — End-of-week cleanup
+### `/rit-end` — End-of-week cleanup
 
 Run once at the end of the rotation week, before the next team starts.
 
@@ -56,7 +56,7 @@ Run once at the end of the rotation week, before the next team starts.
   fast-path (no re-triage of component/priority/release blocker needed)
 
 ```
-/rit-unassign
+/rit-end
 ```
 
 ---
@@ -94,7 +94,7 @@ Everyday    /rit-triage Untriaged          ← triage new bugs
 
 Mid-week    /rit-sweep                     ← health check, PR-closed nudges
 
-Friday EOW  /rit-unassign                  ← clean up stale assignments
+Friday EOW  /rit-end                  ← clean up stale assignments
             /rit-sweep --stale-days 30 --unassign   ← optional deeper cleanup
 ```
 
@@ -150,7 +150,7 @@ RIT/
         ├── rit-triage/
         │   ├── SKILL.md               # Triage skill definition
         │   └── release_blocker_rules.md  # A/C/R/P release blocker evaluation rules
-        ├── rit-unassign/
+        ├── rit-end/
         │   └── SKILL.md               # EOW cleanup skill definition
         └── rit-sweep/
             └── SKILL.md               # Health check skill definition
